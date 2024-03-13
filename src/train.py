@@ -18,12 +18,22 @@ from transformers import get_polynomial_decay_schedule_with_warmup
 from accelerate import Accelerator
 
 from data.aokvqa import AOKVQADataset
+from data.vqa import VQADataset
+from data.vqaabs import VQAAbstractDataset
+from data.vizwiz import VizwizDataset
+from data.v7w import V7WDataset
+from data.daquar import DAQUARDataset
+
 from models import MODEL_REGISTRY
 
 from utils.okvqa_utils import postprocess_ok_vqa_generation, lemmatize
+from utils.vqa_utils import get_score
 from utils.wandb import wandb_logger
 
-from nltk.translate.bleu_score import sentence_bleu
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# from nltk.translate.bleu_score import sentence_bleu
 
 def set_seed(seed):
     random.seed(seed)
@@ -73,16 +83,10 @@ class Trainer:
             self.model, self.optimizer, self.train_dataloader, self.scheduler
         )
 
-        experiment_name = f"aokvqa_finetune_{args.mode}-{model_config['model_shorthand']}"
+        experiment_name = f"{args.task_name}_finetune_{args.mode}-{model_config['model_shorthand']}"
         if args.model_init is not None:
             experiment_name += '-q2a_init'
-        if 'r' in args.mode:
-            experiment_name += f"-{args.rationales_type}_rationales"
-        if args.train_qids_list is not None:
-            experiment_name += f"-{len(self.train_dataloader.dataset)}_train_examples"
-        if args.val_qids_list is not None:
-            experiment_name += f"-{len(self.eval_dataloader.dataset)}_eval_examples"
-
+                
         self.output_dir = os.path.join(args.output_dir, experiment_name)
         if self.is_mainproc:
             if not os.path.exists(self.output_dir):
@@ -93,46 +97,41 @@ class Trainer:
 
     def create_dataloader(self, args, vis_processors, text_processors):
         # Create train and eval dataloaders
-        train_dataset = AOKVQADataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors)
-        eval_dataset = AOKVQADataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors)
 
-        # Filter train dataset by qids and Set rationales for training dataset, if needed
-        if args.train_qids_list is not None:
-            with open(args.train_qids_list) as f:
-                train_qids_list = f.read().splitlines()
-                train_qids_list = [int(qid) for qid in train_qids_list]
-                train_dataset.filter_by_qids(train_qids_list)
-        if args.train_rationales_source is not None:
-            train_rationales_data = json.load(open(args.train_rationales_source))['instances']
-            assert len(train_rationales_data) == len(train_dataset)
-            qid2rationale = {d['qid']: d['rationale'] for d in train_rationales_data}
-            train_dataset.set_rationales(qid2rationale)
-
-        # Filter val dataset by qids and Set rationales for val dataset, if needed
-        if args.val_qids_list is not None:
-            with open(args.val_qids_list) as f:
-                val_qids_list = f.read().splitlines()
-                val_qids_list = [int(qid) for qid in val_qids_list]
-                eval_dataset.filter_by_qids(val_qids_list)
-        if args.val_rationales_source is not None:
-            val_rationales_data = json.load(open(args.val_rationales_source))['instances']
-            assert len(val_rationales_data) == len(eval_dataset)
-            qid2rationale = {d['qid']: d['rationale'] for d in val_rationales_data}
-            eval_dataset.set_rationales(qid2rationale)
+        if self.args.task_name == 'aokvqa':
+            train_dataset = AOKVQADataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = AOKVQADataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        elif self.args.task_name == 'vqa':
+            train_dataset = VQADataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = VQADataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        elif self.args.task_name == 'vqaabs':
+            train_dataset = VQAAbstractDataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = VQAAbstractDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        elif self.args.task_name == 'vizwiz':
+            train_dataset = VizwizDataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = VizwizDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        elif self.args.task_name == 'v7w':
+            train_dataset = V7WDataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = V7WDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        elif self.args.task_name == 'daquar':
+            train_dataset = DAQUARDataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = DAQUARDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+        else:
+            raise NotImplementedError(f"{args.task_name} not implemented")
 
         train_dataloader = torch.utils.data.DataLoader(
             dataset=train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=2,
-            collate_fn=train_dataset.aokvqa_collate_fn
+            collate_fn=train_dataset.task_collate_fn
         )
         eval_dataloader = torch.utils.data.DataLoader(
             dataset=eval_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=2,
-            collate_fn=eval_dataset.aokvqa_collate_fn
+            collate_fn=eval_dataset.task_collate_fn
         )
         return train_dataloader, eval_dataloader
 
@@ -153,48 +152,42 @@ class Trainer:
         all_eval_instances = []
         samples_completed = 0
 
-        t = tqdm(eval_dataloader, desc="Evaluating A-OKVQA")
+        t = tqdm(eval_dataloader, desc=f"Evaluating {self.args.task_name}")
+
         for batch in t:
             samples_completed += len(batch['qids'])
             batch['image'] = batch['image'].to(self.device)
 
+            # TODO: why neet to use module?
             predicted_outputs = model.module.generate(batch)
             true_outputs = batch['text_output']
 
+            # TODO: check
             for idx, (pred_output, true_output) in enumerate(zip(predicted_outputs, true_outputs)):
-                if self.args.mode in ['q2a', 'qr2a', 'q2ra']:
-                    answer = extract_answer(pred_output) if self.args.mode == 'q2ra' else pred_output
-                    answer = lemmatize(answer)
-                    answer = postprocess_ok_vqa_generation(answer)
+                answer = pred_output
+                # answer = lemmatize(answer)
+                # answer = postprocess_ok_vqa_generation(answer)
 
-                    qid = batch['qids'][idx]
-                    score_dict = eval_dataloader.dataset.qid2score_dict[qid]
+                qid = batch['qids'][idx]
+                score_dict = eval_dataloader.dataset.qid2score_dict[qid]
+                if answer in score_dict.keys():
                     score = score_dict[answer]
-                    eval_score += score
+                else:
+                    score = 0
+                eval_score += score
 
-                    eval_instance = {
-                        'qid': qid,
-                        'input': batch['prompt'][idx],
-                        'true_output': true_outputs[idx],
-                        'pred_output': predicted_outputs[idx],
-                        'pred_answer': answer,
-                        'score_dict': score_dict,
-                        'score': score,
-                    }
-                    all_eval_instances.append(eval_instance)
+                eval_instance = {
+                    'qid': qid,
+                    'input': batch['prompt'][idx],
+                    'true_output': true_outputs[idx],
+                    'pred_output': predicted_outputs[idx],
+                    'pred_answer': answer,
+                    'score_dict': score_dict,
+                    'score': score,
+                }
+                all_eval_instances.append(eval_instance)
 
-                elif self.args.mode == 'q2r':
-                    eval_score += sentence_bleu([true_output.lower().strip('.').split()], pred_output.split())
-                    eval_instance = {
-                        'qid': qid,
-                        'input': batch['prompt'][idx],
-                        'true_output': true_outputs[idx],
-                        'pred_output': predicted_outputs[idx],
-                    }
-                    all_eval_instances.append(eval_instance)
-
-
-            t.set_description("Evaluating A-OKVQA (score = {:.2f}%)".format(100.0*eval_score/samples_completed))
+            t.set_description("Evaluating {} (score = {:.2f}%)".format(self.args.task_name, 100.0*eval_score/samples_completed))
 
         final_eval_score = eval_score/samples_completed*100.0
         return final_eval_score, all_eval_instances
@@ -236,7 +229,7 @@ class Trainer:
         if self.is_mainproc:
             eval_score, _ = self.eval(self.model, self.eval_dataloader)
             logger.info("Initial eval score: {:.2f}".format(eval_score))
-            wandb_logger.log({'a-okvqa': {'val_score': eval_score}})
+            wandb_logger.log({f'{self.args.task_name}': {'val_score': eval_score}})
             #pass
 
         self.model.zero_grad()
@@ -258,7 +251,7 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 if (step + 1) % wandb_logger.get_log_freq() == 0:
-                    log_dict = {'a-okvqa': {'loss': loss.item()}}
+                    log_dict = {f'{self.args.task_name}': {'loss': loss.item()}}
                     if self.is_mainproc:
                         wandb_logger.log(log_dict)
             self.accelerator.wait_for_everyone()
@@ -267,7 +260,7 @@ class Trainer:
             if self.is_mainproc:
                 eval_score, _ = self.eval(self.model, self.eval_dataloader)
                 logger.info("Evaluation after epoch {}: {:.2f}".format(epoch+1, eval_score))
-                wandb_logger.log({'a-okvqa': {'val_score': eval_score}})
+                wandb_logger.log({f'{self.args.task_name}': {'val_score': eval_score}})
                 if eval_score >= best_score:
                     logger.info("New best evaluation score: {:.2f}".format(eval_score))
                     best_score = eval_score
@@ -293,25 +286,18 @@ def main():
     parser.add_argument("--model_config_file", type=str, required=True)
     parser.add_argument("--training_config_file", type=str, required=True)
     parser.add_argument("--mode", type=str, required=True, choices=['q2a', 'qr2a', 'q2r', 'q2ra'])
+    parser.add_argument("--demo", action=store_true, help="whether use a small amount of dataset as demo")
 
     parser.add_argument("--model_init", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default='/home/shared/MCL/experiments/florajia/Blip-finetuning_1e-6-train_ViT/')
+    parser.add_argument("--wandb_config_file", type=str, default="/home/florajia/blip2_finetune/src/configs/wandb_config/wandb.yaml")
 
-    parser.add_argument("--rationales_type", type=str, default='ground_truth')
-    parser.add_argument("--train_rationales_source", type=str, default=None)
-    parser.add_argument("--train_qids_list", type=str, default=None)
-    parser.add_argument("--val_rationales_source", type=str, default=None)
-    parser.add_argument("--val_qids_list", type=str, default=None)
-
-    parser.add_argument("--output_dir", type=str, default='/net/nfs.cirrascale/mosaic/tejass/experiments/MCoT/finetuning/')
-    parser.add_argument("--wandb_config_file", type=str, default="/net/nfs.cirrascale/mosaic/tejass/data/wandb_config.yaml")
+    parser.add_argument("--task_name", type=str, required=True)
 
     args = parser.parse_args()
     set_seed(42)
-
-    if args.rationales_type != 'ground_truth':
-        assert args.train_rationales_source is not None
-        assert args.train_qids_list is not None
-
+    
+    assert args.task_name in args.training_config_file
 
     training_config = yaml.safe_load(open(args.training_config_file))
     model_config = yaml.safe_load(open(args.model_config_file))
