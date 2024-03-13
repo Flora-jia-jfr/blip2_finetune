@@ -1,19 +1,19 @@
 # blip2_finetune
 
 # multimodal-cot
-Repo for summer23 internship project on multimodal CoT
+forked from Repo for summer23 internship project on multimodal CoT under tejas1995
 
 ## Installation
 
 
 ```
-git clone --recurse-submodules https://github.com/tejas1995/blip2_finetune.git
+git clone --recurse-submodules https://github.com/Flora-jia-jfr/blip2_finetune.git
 cd src/
 ```
 
 Create conda environment
 ```
-conda create -n mcot python=3.9
+conda create -n mcot python=3.8
 conda activate mcot
 ```
 

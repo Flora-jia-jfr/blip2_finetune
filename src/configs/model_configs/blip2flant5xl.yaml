@@ -17,7 +17,7 @@ pt_model_load:
     drop_path_rate: 0
     use_grad_checkpoint: False
     vit_precision: "fp16"
-    freeze_vit: True
+    freeze_vit: True # change to see whether this influence a lot
     max_txt_len: 128
 
     # Q-Former
@@ -40,7 +40,5 @@ pt_model_load:
       text_processor:
           train:
             name: "blip_caption"
-            max_words: 128
           eval:
             name: "blip_caption"
-            max_words: 128

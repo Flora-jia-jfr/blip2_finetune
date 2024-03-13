@@ -113,7 +113,7 @@ class AOKVQADataset(Dataset):
             'qid': qid
         }
 
-    def aokvqa_collate_fn(self, batch):
+    def task_collate_fn(self, batch):
 
         images = [b['raw_image'] for b in batch]
         processed_images = torch.stack([self.vis_processor(img) for img in images], dim=0)
