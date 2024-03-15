@@ -31,6 +31,8 @@ class DAQUARDataset(Dataset):
         data_dir = '/home/shared/MCL/DAQUAR'
         images_dir = '/home/shared/MCL/DAQUAR/nyu_depth_images'
         image_filenames = os.listdir(images_dir)
+        self.data_dir = data_dir
+        self.images_dir = images_dir
         self.mode = mode
         self.split = split
         self.demo = demo
@@ -49,7 +51,6 @@ class DAQUARDataset(Dataset):
             self.imageid2filename[image_id] = os.path.join(self.images_dir, original_name)
         
         self.annotations_file = os.path.join(data_dir, 'qa.894.raw.{}.txt'.format(split))
-        self.ans2label_file = os.path.join(data_dir, 'ans2label.pkl'.format(split))
 
         # for preprocess dataset
         if self.demo:
@@ -74,7 +75,9 @@ class DAQUARDataset(Dataset):
                     annotation_len = 1000
                 else:
                     annotation_len = len(f)
+                print("readlines: ", f[:10])
                 for i in range(0,annotation_len,2):
+                    qid = i/2
                     question = f[i].strip()
                     find_image_id = False
                     for word in question.split(" "):
@@ -88,21 +91,20 @@ class DAQUARDataset(Dataset):
                     labels = []
                     scores = {}
                     for answer in answers:
-                        labels.append(self.ans2label[answer])
                         scores[answer] = 1.0
                     self.qid2score_dict[qid] = scores
 
-                # Store pre-processed example
-                example = {
-                    'question_id': image_id,
-                    'image_id': image_id,
-                    'question': question,
-                    'correct_answer': answers[0],
-                    'answers': answers,
-                    'scores': scores,
-                    'top_answer': answers[0],
-                }
-                self.data.append(example)
+                    # Store pre-processed example
+                    example = {
+                        'question_id': qid,
+                        'image_id': image_id,
+                        'question': question,
+                        'correct_answer': answers[0],
+                        'answers': answers,
+                        'scores': scores,
+                        'top_answer': answers[0],
+                    }
+                    self.data.append(example)
 
             pkl.dump(self.data, open(self.cached_data_file, 'wb'))
             pkl.dump(self.qid2score_dict, open(self.cached_qid2score_dict_file, 'wb'))

@@ -31,6 +31,8 @@ class VQADataset(Dataset):
         data_dir = '/home/shared/MCL/vqav2'
         images_dir = '/home/shared/MCL/ms-coco/images'
         image_filenames = os.listdir(images_dir)
+        self.data_dir = data_dir
+        self.images_dir = images_dir
         self.mode = mode
         self.split = split
         self.demo = demo

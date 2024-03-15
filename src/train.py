@@ -59,6 +59,8 @@ class Trainer:
     def __init__(self, args, training_config, model_config):
         self.args = args
         self.num_epochs = training_config['num_epochs']
+        if self.args.demo:
+            self.num_epochs = 5
         self.batch_size = training_config['batch_size']
         self.inference_params = training_config['inference_params'][args.mode]
 
@@ -86,11 +88,12 @@ class Trainer:
         experiment_name = f"{args.task_name}_finetune_{args.mode}-{model_config['model_shorthand']}"
         if args.model_init is not None:
             experiment_name += '-q2a_init'
+        if args.demo:
+            experiment_name += '-demo'
                 
         self.output_dir = os.path.join(args.output_dir, experiment_name)
         if self.is_mainproc:
-            if not os.path.exists(self.output_dir):
-                os.makedirs(self.output_dir)
+            os.makedirs(self.output_dir, exist_ok=True)
             wandb_logger.initialize(args.wandb_config_file, experiment_name)
             logger.info(f"Saving best model checkpoints to {self.output_dir}")
 
@@ -115,7 +118,7 @@ class Trainer:
             eval_dataset = V7WDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
         elif self.args.task_name == 'daquar':
             train_dataset = DAQUARDataset(split='train', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
-            eval_dataset = DAQUARDataset(split='val', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
+            eval_dataset = DAQUARDataset(split='test', mode=args.mode, vis_processors=vis_processors, text_processors=text_processors, demo=self.args.demo)
         else:
             raise NotImplementedError(f"{args.task_name} not implemented")
 
@@ -159,6 +162,13 @@ class Trainer:
             batch['image'] = batch['image'].to(self.device)
 
             # TODO: why neet to use module?
+            print('='*10, "START: check model attributes", '='*10)
+            model_attributes = dir(model.module)
+            # To print or process the list of attributes
+            for attribute in model_attributes:
+                print(attribute)
+            print('='*10, "END: check model attributes", '='*10)
+            
             predicted_outputs = model.module.generate(batch)
             true_outputs = batch['text_output']
 
@@ -286,10 +296,10 @@ def main():
     parser.add_argument("--model_config_file", type=str, required=True)
     parser.add_argument("--training_config_file", type=str, required=True)
     parser.add_argument("--mode", type=str, required=True, choices=['q2a', 'qr2a', 'q2r', 'q2ra'])
-    parser.add_argument("--demo", action=store_true, help="whether use a small amount of dataset as demo")
+    parser.add_argument("--demo", action='store_true', help="whether use a small amount of dataset as demo")
 
     parser.add_argument("--model_init", type=str, default=None)
-    parser.add_argument("--output_dir", type=str, default='/home/shared/MCL/experiments/florajia/Blip-finetuning_1e-6-train_ViT/')
+    parser.add_argument("--output_dir", type=str, default='/home/shared/MCL/experiments/florajia/Blip-finetuning/')
     parser.add_argument("--wandb_config_file", type=str, default="/home/florajia/blip2_finetune/src/configs/wandb_config/wandb.yaml")
 
     parser.add_argument("--task_name", type=str, required=True)

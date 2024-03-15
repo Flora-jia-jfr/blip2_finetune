@@ -29,6 +29,8 @@ class VizwizDataset(Dataset):
         data_dir = '/home/shared/MCL/vizwiz'
         images_dir = os.path.join('/home/shared/MCL/vizwiz/images', split)
         image_filenames = os.listdir(images_dir)
+        self.data_dir = data_dir
+        self.images_dir = images_dir
         self.mode = mode
         self.split = split
         self.demo = demo
@@ -61,6 +63,7 @@ class VizwizDataset(Dataset):
         if os.path.exists(self.cached_data_file) and os.path.exists(self.cached_qid2score_dict_file):
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
             self.qid2score_dict = pkl.load(open(self.cached_qid2score_dict_file, 'rb'))
+            annotations = json.load(open(self.annotations_file))
             self.imageid2filename = {image_id: os.path.join(self.images_dir, anno['image']) for image_id, anno in enumerate(annotations)}
             logger.info("Loaded Vizwiz {} dataset, with {} examples".format(self.split, len(self.data)))
         else:

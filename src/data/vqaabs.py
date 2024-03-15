@@ -30,6 +30,8 @@ class VQAAbstractDataset(Dataset):
 
         data_dir = '/home/shared/MCL/vqa_abstract'
         images_dir = '/home/shared/MCL/vqa_abstract/images'
+        self.data_dir = data_dir
+        self.images_dir = images_dir
         # image_filenames = os.listdir(images_dir)
         self.mode = mode
         self.split = split
@@ -40,12 +42,6 @@ class VQAAbstractDataset(Dataset):
             self.vis_processor = vis_processors['train'] if split == 'train' else vis_processors['eval']
         if text_processors is not None:
             self.text_processor = text_processors['train'] if split == 'train' else text_processors['eval']
-
-        # self.imageid2filename = {}
-        # for fn in image_filenames:
-        #     image_id = int(fn.split('_')[-1].strip('.jpg'))
-        #     self.imageid2filename[image_id] = os.path.join(images_dir, fn)
-        # self.imageids = list(set(list(self.imageid2filename.keys())))
 
         self.annotations_file = os.path.join(data_dir, 'abstract_v002_{}2015_annotations.json'.format(split))
         self.questions_file = os.path.join(data_dir, 'OpenEnded_abstract_v002_{}2015_questions.json'.format(split))
@@ -64,8 +60,6 @@ class VQAAbstractDataset(Dataset):
         if os.path.exists(self.cached_data_file) and os.path.exists(self.cached_qid2score_dict_file):
             self.data = pkl.load(open(self.cached_data_file, 'rb'))
             self.qid2score_dict = pkl.load(open(self.cached_qid2score_dict_file, 'rb'))
-            image_ids = set([ex['image_id'] for ex in self.data])
-            self.imageid2filename = {imgid: os.path.join(self.images_dir, 'abstract_v002_{}2015_{}.png'.format(split, str(imgid).zfill(12))) for imgid in image_ids}
             logger.info("Loaded VQAAbstract {} dataset, with {} examples".format(self.split, len(self.data)))
         else:
             # Create map from question id to question
@@ -127,6 +121,10 @@ class VQAAbstractDataset(Dataset):
             pkl.dump(self.data, open(self.cached_data_file, 'wb'))
             pkl.dump(self.qid2score_dict, open(self.cached_qid2score_dict_file, 'wb'))
             logger.info("Created and Loaded VQAAbstract {} dataset, with {} examples".format(self.split, len(self.data)))
+
+        image_ids = set([ex['image_id'] for ex in self.data])
+        self.imageid2filename = {imgid: os.path.join(self.images_dir, 'abstract_v002_{}2015_{}.png'.format(split, str(imgid).zfill(12))) for imgid in image_ids}
+
 
         if vis_processors is None or text_processors is None:
             logger.warning("Vision/text processors not set!")

@@ -30,6 +30,8 @@ class V7WDataset(Dataset):
         data_dir = '/home/shared/MCL/visual7w'
         images_dir = '/home/shared/MCL/visual7w/images'
         image_filenames = os.listdir(images_dir)
+        self.data_dir = data_dir
+        self.images_dir = images_dir
         self.mode = mode
         self.split = split
         self.demo = demo
@@ -47,7 +49,7 @@ class V7WDataset(Dataset):
         if text_processors is not None:
             self.text_processor = text_processors['train'] if split == 'train' else text_processors['eval']
 
-        self.annotations_file = os.path.join(data_dir, 'dataset_v7w_telling')
+        self.annotations_file = os.path.join(data_dir, 'dataset_v7w_telling.json')
 
         # for preprocess dataset
         if self.demo:
@@ -81,7 +83,7 @@ class V7WDataset(Dataset):
                 for qa_pair in qa_pairs:
                     question = qa_pair['question']
                     qa_id = qa_pair['qa_id']
-                    answer = qa_pair['answer']
+                    answer = qa_pair['answer'].lower().replace('.', '')
                     multiple_choices = qa_pair['multiple_choices']        
                     question_type = qa_pair['type']
                     scores = {answer: 1.0}
